@@ -30,7 +30,14 @@ def load_data(db_path: str = "../database.db"):
 
     # Join tables to create a comprehensive dataset
     loans_and_cohort = loans.merge(allowlist, on="user_id", how="left")
-    repayments_and_loans = repayments.merge(loans_and_cohort, on="loan_id", how="left")
+    # The loans_and_cohort shows the historical status of each loan. To join with repayments,
+    # we just need information about the loan_id, batch and allowlisted_date, so we can drop other
+    # columns and duplicated rows.
+    repayments_and_loans = repayments.merge(
+        loans_and_cohort[["loan_id", "batch", "allowlisted_date"]].drop_duplicates(),
+        on="loan_id",
+        how="left",
+    )
 
     # Close the database connection
     conn.close()
@@ -70,3 +77,50 @@ def prepare_roi_columns(repayments_and_loans: pd.DataFrame) -> pd.DataFrame:
     ].fillna(0) + repayments_and_loans["billings_amount"].fillna(0)
 
     return repayments_and_loans
+
+
+def compute_roi_curves(
+    repayments_and_loans: pd.DataFrame, cohort_principal: pd.DataFrame | pd.Series
+) -> pd.DataFrame:
+    """
+    Compute ROI curves for each cohort over time.
+
+    Args:
+        repayments_and_loans (pd.DataFrame): DataFrame containing repayments and loans data with necessary columns.
+
+    Returns:
+        pd.DataFrame: DataFrame containing ROI curves with columns 'batch', 'h_days', and 'ROI'.
+    """
+    # Aggregate cash flows by batch and h_days
+    repayment_curve = (
+        repayments_and_loans.groupby(["batch", "h_days"])["repayment_total"]
+        .sum()
+        .groupby(level=0)
+        .cumsum()
+        .reset_index()
+    )
+    repayment_curve = repayment_curve.merge(cohort_principal, on="batch")
+    repayment_curve["ROI"] = (
+        repayment_curve["repayment_total"] / repayment_curve["cohort_principal"] - 1
+    )
+    return repayment_curve
+
+
+def compute_cohort_principal(loans_and_cohort: pd.DataFrame) -> pd.Series:
+    """
+    Compute the cohort principal for each batch.
+
+    Args:
+        loans_and_cohort (pd.DataFrame): The merged repayments and loans DataFrame
+
+    Returns:
+        pd.Series: Series with cohort principal for each batch
+    """
+    cohort_principal = (
+        loans_and_cohort[["loan_id", "batch", "loan_amount"]]
+        .drop_duplicates(subset=["loan_id"])
+        .groupby("batch")["loan_amount"]
+        .sum()
+        .rename("cohort_principal")
+    )
+    return cohort_principal
