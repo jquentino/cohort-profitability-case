@@ -1,10 +1,14 @@
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.ticker import FuncFormatter
+import pandas as pd
 
 
 def initial_default_tolerance_simulation_plot(
-    tolerance_results, cohort_to_test="A", ax: Axes | None = None
+    tolerance_results: pd.DataFrame,
+    max_tolerance_rate: float,
+    cohort_to_test="A",
+    ax: Axes | None = None,
 ):
     """
     Plots ROI at horizon H versus initial default rates for a specified cohort.
@@ -18,13 +22,6 @@ def initial_default_tolerance_simulation_plot(
     """
 
     # Find the maximum default rate with non-negative ROI
-
-    max_tolerable_rate = 0
-    for rate, roi in zip(
-        tolerance_results["default_rates"], tolerance_results["roi_values"]
-    ):
-        if roi >= 0:
-            max_tolerable_rate = rate
 
     if ax is None:
         _, ax = plt.subplots(figsize=(10, 6))
@@ -40,11 +37,11 @@ def initial_default_tolerance_simulation_plot(
         y=0, color="red", linestyle="--", alpha=0.7, label="Break-even (ROI = 0)"
     )
     ax.axvline(
-        x=max_tolerable_rate,
+        x=max_tolerance_rate,
         color="green",
         linestyle="--",
         alpha=0.7,
-        label=f"Max tolerable rate: {max_tolerable_rate:.1%}",
+        label=f"Max tolerable rate: {max_tolerance_rate:.1%}",
     )
     ax.set_xlabel("Initial Default Rate")
     ax.set_ylabel("ROI at Horizon H")
