@@ -28,13 +28,22 @@ def load_data(db_path: str = "../database.db"):
     loans["updated_at"] = pd.to_datetime(loans["updated_at"], format="ISO8601")
     repayments["date"] = pd.to_datetime(repayments["date"], format="ISO8601")
 
+    # Map each batch to a letter (A, B, C, ...) to be more readable in plots
+    batch_to_letter = {
+        batch: chr(65 + i)
+        for i, batch in enumerate(sorted(allowlist["batch"].unique()))
+    }
+    allowlist["batch_letter"] = allowlist["batch"].map(batch_to_letter)
+
     # Join tables to create a comprehensive dataset
     loans_and_cohort = loans.merge(allowlist, on="user_id", how="left")
     # The loans_and_cohort shows the historical status of each loan. To join with repayments,
     # we just need information about the loan_id, batch and allowlisted_date, so we can drop other
     # columns and duplicated rows.
     repayments_and_loans = repayments.merge(
-        loans_and_cohort[["loan_id", "batch", "allowlisted_date"]].drop_duplicates(),
+        loans_and_cohort[
+            ["loan_id", "batch_letter", "allowlisted_date"]
+        ].drop_duplicates(),
         on="loan_id",
         how="left",
     )
@@ -61,7 +70,7 @@ def prepare_roi_columns(repayments_and_loans: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: DataFrame with additional columns for ROI calculations
     """
     # Define the base date as the cohort creation date (t=0)
-    repayments_and_loans["cohort_start"] = repayments_and_loans.groupby("batch")[
+    repayments_and_loans["cohort_start"] = repayments_and_loans.groupby("batch_letter")[
         "allowlisted_date"
     ].transform("min")
 
@@ -93,13 +102,13 @@ def compute_roi_curves(
     """
     # Aggregate cash flows by batch and h_days
     repayment_curve = (
-        repayments_and_loans.groupby(["batch", "h_days"])["repayment_total"]
+        repayments_and_loans.groupby(["batch_letter", "h_days"])["repayment_total"]
         .sum()
         .groupby(level=0)
         .cumsum()
         .reset_index()
     )
-    repayment_curve = repayment_curve.merge(cohort_principal, on="batch")
+    repayment_curve = repayment_curve.merge(cohort_principal, on="batch_letter")
     repayment_curve["ROI"] = (
         repayment_curve["repayment_total"] / repayment_curve["cohort_principal"] - 1
     )
@@ -117,9 +126,9 @@ def compute_cohort_principal(loans_and_cohort: pd.DataFrame) -> pd.Series:
         pd.Series: Series with cohort principal for each batch
     """
     cohort_principal = (
-        loans_and_cohort[["loan_id", "batch", "loan_amount"]]
+        loans_and_cohort[["loan_id", "batch_letter", "loan_amount"]]
         .drop_duplicates(subset=["loan_id"])
-        .groupby("batch")["loan_amount"]
+        .groupby("batch_letter")["loan_amount"]
         .sum()
         .rename("cohort_principal")
     )

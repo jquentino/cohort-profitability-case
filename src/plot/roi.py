@@ -1,6 +1,7 @@
 import pandas as pd
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
+from typing import Literal
 
 
 def plot_roi_curves(
@@ -8,6 +9,7 @@ def plot_roi_curves(
     ax: Axes | None = None,
     extra_title: str | None = None,
     show_legend: bool = True,
+    legend_location: Literal["side", "bottom"] = "side",
 ) -> Axes:
     """
     Plots ROI curves for each cohort in the repayment_curve DataFrame.
@@ -22,8 +24,8 @@ def plot_roi_curves(
     if ax is None:
         _, ax = plt.subplots()
 
-    for batch, g in repayment_curve.groupby("batch"):
-        ax.plot(g["h_days"], g["ROI"], label=f"Cohort {batch[:10]}...")  # type: ignore
+    for batch_letter, g in repayment_curve.groupby("batch_letter"):
+        ax.plot(g["h_days"], g["ROI"], label=f"Cohort {batch_letter}")  # type: ignore
 
     ax.set_title("ROI by Cohort" + (f" - {extra_title}" if extra_title else ""))
     ax.set_xlabel("H (days since cohort start)")
@@ -31,5 +33,10 @@ def plot_roi_curves(
     ax.grid(which="both", axis="x")
     ax.axhline(0, color="black", linestyle="--", linewidth=0.8)
     if show_legend:
-        ax.legend(title="Cohort", bbox_to_anchor=(1.05, 1), loc="upper left")
+        if legend_location == "bottom":
+            ax.legend(
+                title="Cohort", loc="lower center", bbox_to_anchor=(0.5, -0.25), ncol=2
+            )
+        else:
+            ax.legend(title="Cohort", bbox_to_anchor=(1.05, 1), loc="upper left")
     return ax
