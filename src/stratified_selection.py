@@ -34,10 +34,7 @@ def stratified_loan_selection(
                 labels=strata_labels,
                 duplicates="drop",
             )
-        except ValueError as e:
-            # print(
-            #     f"Error occurred while spliting cohort into {n_strata} strata, reducing number of strata"
-            # )
+        except ValueError as _:
             n_strata -= 1
             strata_labels.pop(-1)
             continue
