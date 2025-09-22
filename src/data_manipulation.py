@@ -2,7 +2,7 @@ import sqlite3
 import pandas as pd
 
 
-def load_data(db_path: str = "../database.db"):
+def load_data(db_path: str = "../database.db", remove_loans_with_errors: bool = False):
     """
     Load and prepare data from the SQLite database.
 
@@ -34,6 +34,19 @@ def load_data(db_path: str = "../database.db"):
         for i, batch in enumerate(sorted(allowlist["batch"].unique()))
     }
     allowlist["batch_letter"] = allowlist["batch"].map(batch_to_letter)
+
+    if remove_loans_with_errors:
+        loans_ids_to_exclude = loans[
+            loans.status.isin(
+                [
+                    "technical_loss",
+                    "manual_cancellation",
+                    "manual_cancelled",
+                    "cancelled",
+                ]
+            )
+        ].loan_id.unique()
+        loans = loans[~loans.loan_id.isin(loans_ids_to_exclude)].copy()
 
     # Join tables to create a comprehensive dataset
     loans_and_cohort = loans.merge(allowlist, on="user_id", how="left")
