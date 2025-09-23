@@ -7,7 +7,7 @@ Author: Generated for CloudWalk Case Study
 """
 
 import pandas as pd
-from .feature_utils import gini_coefficient, hhi_concentration, safe_divide
+from .feature_utils import hhi_concentration, safe_divide
 
 
 def create_loan_composition_features(features_df: pd.DataFrame) -> pd.DataFrame:
@@ -40,7 +40,6 @@ def create_loan_distribution_features(features_df: pd.DataFrame) -> pd.DataFrame
     def calc_group_metrics(group):
         return pd.Series(
             {
-                "loan_amount_gini": gini_coefficient(group["loan_amount"]),
                 "loan_amount_hhi": hhi_concentration(group["loan_amount"]),
                 "loan_amount_p25": group["loan_amount"].quantile(0.25),
                 "loan_amount_p75": group["loan_amount"].quantile(0.75),
