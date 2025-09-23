@@ -66,24 +66,6 @@ def get_unique_loans_from_history(loans_and_cohort: pd.DataFrame) -> pd.DataFram
     return unique_loans
 
 
-def calculate_gini_coefficient(values: np.ndarray) -> float:
-    """Calculate Gini coefficient for concentration measurement."""
-    if len(values) == 0:
-        return 0
-
-    # Sort values
-    sorted_values = np.sort(values)
-    n = len(values)
-
-    # Calculate Gini coefficient
-    index = np.arange(1, n + 1)
-    gini = (2 * np.sum(index * sorted_values)) / (n * np.sum(sorted_values)) - (
-        n + 1
-    ) / n
-
-    return gini
-
-
 def calculate_hhi(values: np.ndarray) -> float:
     """Calculate Herfindahl-Hirschman Index for concentration measurement."""
     if len(values) == 0 or values.sum() == 0:
@@ -97,11 +79,6 @@ def calculate_hhi(values: np.ndarray) -> float:
     hhi = np.sum(shares**2)
 
     return hhi
-
-
-def gini_coefficient(values: pd.Series) -> float:
-    """Calculate Gini coefficient for a pandas Series."""
-    return calculate_gini_coefficient(np.array(values.values))
 
 
 def hhi_concentration(values: pd.Series) -> float:
