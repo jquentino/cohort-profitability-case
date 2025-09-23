@@ -25,7 +25,9 @@ def load_data(db_path: str = "../database.db", remove_loans_with_errors: bool = 
     )
     # Fixing datetime formats
     loans["created_at"] = pd.to_datetime(loans["created_at"], format="ISO8601")
-    loans["updated_at"] = pd.to_datetime(loans["updated_at"], format="ISO8601")
+    loans["updated_at"] = pd.to_datetime(
+        loans["updated_at"], format="ISO8601", utc=False
+    ).dt.tz_localize(None)
     repayments["date"] = pd.to_datetime(repayments["date"], format="ISO8601")
 
     # Map each batch to a letter (A, B, C, ...) to be more readable in plots
@@ -50,16 +52,41 @@ def load_data(db_path: str = "../database.db", remove_loans_with_errors: bool = 
 
     # Join tables to create a comprehensive dataset
     loans_and_cohort = loans.merge(allowlist, on="user_id", how="left")
+    loans_and_cohort["cohort_start"] = loans_and_cohort.groupby("batch_letter")[
+        "allowlisted_date"
+    ].transform("min")
+
+    loans_and_cohort["created_at_h_days"] = (
+        loans_and_cohort["created_at"] - loans_and_cohort["cohort_start"]
+    ).dt.days
+
+    loans_and_cohort["updated_at_h_days"] = (
+        loans_and_cohort["updated_at"] - loans_and_cohort["cohort_start"]
+    ).dt.days
+
     # The loans_and_cohort shows the historical status of each loan. To join with repayments,
     # we just need information about the loan_id, batch and allowlisted_date, so we can drop other
     # columns and duplicated rows.
+
     repayments_and_loans = repayments.merge(
         loans_and_cohort[
-            ["loan_id", "batch_letter", "allowlisted_date"]
+            [
+                "loan_id",
+                "batch_letter",
+                "allowlisted_date",
+                "loan_amount",
+                "cohort_start",
+                "created_at",
+                "created_at_h_days",
+                "updated_at_h_days",
+            ]
         ].drop_duplicates(),
         on="loan_id",
         how="left",
     )
+
+    # Prepare ROI columns
+    repayments_and_loans = _prepare_roi_columns(repayments_and_loans)
 
     # Close the database connection
     conn.close()
@@ -67,7 +94,7 @@ def load_data(db_path: str = "../database.db", remove_loans_with_errors: bool = 
     return allowlist, loans, repayments, loans_and_cohort, repayments_and_loans
 
 
-def prepare_roi_columns(repayments_and_loans: pd.DataFrame) -> pd.DataFrame:
+def _prepare_roi_columns(repayments_and_loans: pd.DataFrame) -> pd.DataFrame:
     """
     Prepare additional columns for ROI calculations.
 
@@ -82,15 +109,9 @@ def prepare_roi_columns(repayments_and_loans: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame with additional columns for ROI calculations
     """
-    # Define the base date as the cohort creation date (t=0)
-    repayments_and_loans["cohort_start"] = repayments_and_loans.groupby("batch_letter")[
-        "allowlisted_date"
-    ].transform("min")
-
     # Relative time since the beginning of the cohort
     repayments_and_loans["h_days"] = (
-        pd.to_datetime(repayments_and_loans["date"])
-        - pd.to_datetime(repayments_and_loans["cohort_start"])
+        repayments_and_loans["date"] - repayments_and_loans["cohort_start"]
     ).dt.days
 
     # Cash flow received over time

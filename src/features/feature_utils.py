@@ -12,30 +12,6 @@ import sqlite3
 from typing import Tuple
 
 
-def filter_repayments_by_decision_time(
-    repayments_and_loans: pd.DataFrame,
-    loans_with_cutoff: pd.DataFrame,
-    decision_time_days: int,
-) -> pd.DataFrame:
-    """Filter repayments to only include those up to decision time for each loan."""
-
-    # Prepare repayments data
-    repayments_filtered = repayments_and_loans.copy()
-    repayments_filtered["date"] = pd.to_datetime(repayments_filtered["date"])
-
-    # Merge with cutoff dates
-    repayments_with_cutoff = repayments_filtered.merge(
-        loans_with_cutoff[["loan_id", "decision_cutoff_date"]], on="loan_id", how="left"
-    )
-
-    # Filter to only repayments before decision time
-    repayments_filtered = repayments_with_cutoff[
-        repayments_with_cutoff["date"] <= repayments_with_cutoff["decision_cutoff_date"]
-    ].copy()
-
-    return repayments_filtered
-
-
 def prepare_loan_history_data(
     loans_and_cohort: pd.DataFrame, decision_time_days: int
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -47,40 +23,37 @@ def prepare_loan_history_data(
         decision_time_days: Decision time t in days after cohort creation
 
     Returns:
-        Tuple of (loans_history, loan_creation_records, loan_status_at_decision)
+        Tuple of (loans_history_before_decision, loan_creation_records, loan_status_at_decision)
     """
     loans_history = loans_and_cohort.copy()
-    loans_history["created_at"] = pd.to_datetime(loans_history["created_at"])
-    loans_history["allowlisted_date"] = pd.to_datetime(
-        loans_history["allowlisted_date"]
-    )
-    loans_history["updated_at"] = pd.to_datetime(loans_history["updated_at"])
 
-    # Calculate decision time cutoff for each loan record
-    loans_history["decision_cutoff_date"] = loans_history["allowlisted_date"].apply(
-        lambda x: x + pd.Timedelta(days=decision_time_days)
-    )
+    # Defining the cohort start date for each loan
+    loans_history["cohort_start"] = loans_history.groupby("batch_letter")[
+        "allowlisted_date"
+    ].transform("min")
+
+    # Leaving just loans information until decision time
+    loans_history_before_decision = loans_history[
+        loans_history["updated_at_h_days"] <= decision_time_days
+    ]
 
     # Get the loan creation record (earliest record per loan) for basic characteristics
     loan_creation_records = (
-        loans_history.sort_values("updated_at").groupby("loan_id").first().reset_index()
+        loans_history.sort_values("updated_at_h_days")
+        .groupby("loan_id")
+        .first()
+        .reset_index()
     )
 
     # Get the loan status as of decision time (last update before decision cutoff)
-    # Remove timezone info to avoid comparison issues
-    loans_history["updated_at_naive"] = loans_history["updated_at"].dt.tz_localize(None)
-    loans_history["decision_cutoff_date_naive"] = loans_history["decision_cutoff_date"]
-    loans_before_decision = loans_history[
-        loans_history["updated_at_naive"] <= loans_history["decision_cutoff_date_naive"]
-    ]
     loan_status_at_decision = (
-        loans_before_decision.sort_values("updated_at")
+        loans_history_before_decision.sort_values("updated_at_h_days")
         .groupby("loan_id")
         .last()
         .reset_index()
     )
 
-    return loans_history, loan_creation_records, loan_status_at_decision
+    return loans_history_before_decision, loan_creation_records, loan_status_at_decision
 
 
 def get_unique_loans_from_history(loans_and_cohort: pd.DataFrame) -> pd.DataFrame:
