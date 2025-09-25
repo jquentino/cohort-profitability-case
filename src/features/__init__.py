@@ -41,6 +41,7 @@ def create_loan_level_features(
     loans_and_cohort: pd.DataFrame,
     repayments_and_loans: pd.DataFrame,
     decision_time_days: int = 90,
+    time_horizon_days: int = 180,
 ) -> pd.DataFrame:
     """
     Create comprehensive loan-level features for cohort profitability prediction.
@@ -56,6 +57,7 @@ def create_loan_level_features(
         loans_and_cohort: DataFrame with loan and cohort information (contains loan status history)
         repayments_and_loans: DataFrame with repayment information joined with loan data
         decision_time_days: Decision time t in days after cohort creation (default: 90)
+        time_horizon_days: Time horizon H in days for target variable (default: 180)
 
     Returns:
         DataFrame with loan-level features, one row per unique loan
@@ -102,9 +104,16 @@ def create_loan_level_features(
     # Merge repayment features
     features_df = features_df.merge(repayment_features, on="loan_id", how="left")
 
-    # TODO: Create billing features
-    # billing_features = create_billing_features(loans_history)
-    # features_df = features_df.merge(billing_features, on="loan_id", how="left")
+    # Creating the prediction target
+    repayment_target = (
+        repayments_and_loans[repayments_and_loans["h_days"] <= time_horizon_days]
+        .groupby("loan_id")["repayment_total"]
+        .sum()
+        .reset_index()
+        .rename(columns={"repayment_total": "repayment_at_H"})
+    )
+
+    features_df = features_df.merge(repayment_target, on="loan_id", how="left")
 
     print(
         f"Final loan features dataset: {len(features_df)} loans with {len(features_df.columns)} features"
@@ -151,7 +160,8 @@ def create_cohort_level_features(
 
 
 def create_cohort_features_from_loan_features(
-    loan_features_df: pd.DataFrame, decision_time_days: int = 90
+    loan_features_df: pd.DataFrame,
+    decision_time_days: int = 90,
 ) -> pd.DataFrame:
     """
     Create cohort-level features from already processed loan-level features.
