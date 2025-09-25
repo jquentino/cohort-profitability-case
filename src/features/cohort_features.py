@@ -7,7 +7,7 @@ Author: Generated for CloudWalk Case Study
 """
 
 import pandas as pd
-from .feature_utils import hhi_concentration, safe_divide
+from .feature_utils import hhi_concentration, safe_divide, get_measure_points
 
 
 def create_loan_composition_features(features_df: pd.DataFrame) -> pd.DataFrame:
@@ -22,12 +22,18 @@ def create_loan_composition_features(features_df: pd.DataFrame) -> pd.DataFrame:
             total_loan_amount=("loan_amount", "sum"),
             avg_loan_amount=("loan_amount", "mean"),
             median_loan_amount=("loan_amount", "median"),
+            loan_amount_skewness=("loan_amount", "skew"),
             # Interest rate statistics
             avg_interest_rate=("annual_interest", "mean"),
             median_interest_rate=("annual_interest", "median"),
             std_interest_rate=("annual_interest", "std"),
+            total_repaid_amount=("total_repaid_amount", "sum"),
         )
         .reset_index()
+    )
+    cohort_features["roi_now"] = (
+        cohort_features["total_repaid_amount"] / cohort_features["total_loan_amount"]
+        - 1
     )
 
     return cohort_features
@@ -36,7 +42,7 @@ def create_loan_composition_features(features_df: pd.DataFrame) -> pd.DataFrame:
 def create_loan_distribution_features(features_df: pd.DataFrame) -> pd.DataFrame:
     """Create cohort loan distribution and concentration features using vectorized operations."""
 
-    # Create a function to apply gini and hhi to each group
+    # Create a function to apply hhi to each group
     def calc_group_metrics(group):
         return pd.Series(
             {
@@ -78,14 +84,17 @@ def create_temporal_cohort_features(features_df: pd.DataFrame) -> pd.DataFrame:
     return cohort_features
 
 
-def create_repayment_cohort_features(features_df: pd.DataFrame) -> pd.DataFrame:
+def create_repayment_cohort_features(
+    features_df: pd.DataFrame, decision_time_days: int
+) -> pd.DataFrame:
     """Create cohort-level repayment behavior features using vectorized operations."""
 
     # Create an empty list to store the calculated metrics for each period
     agg_dict = {}
 
     # Add aggregations for all columns that might exist
-    for period in [30, 60, 90]:
+    measure_points = get_measure_points(decision_time_days=decision_time_days)
+    for period in measure_points:
         velocity_col = f"repayment_velocity_{period}d"
         roi_col = f"loan_roi_{period}d"
 
@@ -121,14 +130,18 @@ def create_repayment_cohort_features(features_df: pd.DataFrame) -> pd.DataFrame:
     cohort_features = features_df.groupby("batch_letter").agg(**agg_dict).reset_index()
 
     # Handle percentage of positive ROI separately since it needs a custom calculation
-    if "loan_roi_90d" in features_df.columns:
+    last_measure_point = measure_points[-1]
+    if f"loan_roi_{last_measure_point}d" in features_df.columns:
         # Calculate percentage of positive ROI loans for each batch
         positive_roi = (
-            features_df.groupby("batch_letter")["loan_roi_90d"]
+            features_df.groupby("batch_letter")[f"loan_roi_{last_measure_point}d"]
             .apply(lambda x: (x >= 0).sum() / len(x))
             .reset_index()
         )
-        positive_roi.columns = ["batch_letter", "pct_positive_roi_90d"]
+        positive_roi.columns = [
+            "batch_letter",
+            f"pct_positive_roi_{last_measure_point}d",
+        ]
 
         # Merge with the existing features
         cohort_features = cohort_features.merge(
@@ -162,7 +175,7 @@ def create_risk_distribution_features(features_df: pd.DataFrame) -> pd.DataFrame
                 "executed": "pct_executed",
                 "debt_collection": "pct_debt_collection",
                 "debt_repaid": "pct_debt_repaid",
-                "active": "pct_active",
+                "repaid": "pct_repaid",
             }
         )
 
@@ -173,23 +186,13 @@ def create_risk_distribution_features(features_df: pd.DataFrame) -> pd.DataFrame
                 "pct_executed",
                 "pct_debt_collection",
                 "pct_debt_repaid",
-                "pct_active",
+                "pct_repaid",
             ]
             if col in status_renamed.columns
         ]
 
         status_features = status_renamed[cols_to_keep]
         result_dfs.append(status_features)
-
-    # Billing features if available
-    if "is_in_normal_repayment" in features_df.columns:
-        normal_repayment = (
-            features_df.groupby("batch_letter")["is_in_normal_repayment"]
-            .mean()
-            .reset_index()
-        )
-        normal_repayment.columns = ["batch_letter", "pct_normal_repayment"]
-        result_dfs.append(normal_repayment)
 
     # Merge all result dataframes
     if len(result_dfs) > 1:
@@ -204,7 +207,6 @@ def create_risk_distribution_features(features_df: pd.DataFrame) -> pd.DataFrame
 
 def create_repayment_performance_features(features_df: pd.DataFrame) -> pd.DataFrame:
     """Create cohort-level repayment performance features using vectorized operations."""
-
     result_dfs = []
 
     # Base dataframe with batch letters
@@ -221,29 +223,6 @@ def create_repayment_performance_features(features_df: pd.DataFrame) -> pd.DataF
         .reset_index()
     )
     result_dfs.append(loan_totals)
-
-    # 1. Amount repaid at decision time / total amount of the cohort
-    if "repayment_velocity_90d" in features_df.columns:
-        # Calculate total repaid by multiplying velocity by 90 days
-        repayment = features_df.copy()
-        repayment["total_repaid"] = repayment["repayment_velocity_90d"] * 90
-
-        repayment_sum = (
-            repayment.groupby("batch_letter")["total_repaid"].sum().reset_index()
-        )
-
-        # Merge with loan totals to calculate rate
-        repayment_rate = repayment_sum.merge(loan_totals, on="batch_letter", how="left")
-
-        # Apply safe_divide row by row using apply
-        repayment_rate["repayment_rate_at_decision"] = repayment_rate.apply(
-            lambda row: safe_divide(row["total_repaid"], row["total_cohort_amount"]),
-            axis=1,
-        )
-
-        result_dfs.append(
-            repayment_rate[["batch_letter", "repayment_rate_at_decision"]]
-        )
 
     # Status-based features
     if "status_at_decision_time" in features_df.columns:
@@ -326,9 +305,11 @@ def create_repayment_performance_features(features_df: pd.DataFrame) -> pd.DataF
     return cohort_features
 
 
-def create_interaction_cohort_features(features_df: pd.DataFrame) -> pd.DataFrame:
+def create_interaction_cohort_features(
+    features_df: pd.DataFrame, decision_time_days: int
+) -> pd.DataFrame:
     """Create cohort-level interaction features using vectorized operations."""
-
+    last_measure_point = get_measure_points(decision_time_days=decision_time_days)[-1]
     result_dfs = []
 
     # Base dataframe with batch letters
@@ -346,34 +327,37 @@ def create_interaction_cohort_features(features_df: pd.DataFrame) -> pd.DataFram
         result_dfs.append(avg_interaction)
 
     # Risk-adjusted metrics (if we have ROI data)
-    if "loan_roi_90d" in features_df.columns:
+    if f"loan_roi_{last_measure_point}d" in features_df.columns:
         # Calculate weighted sum and total amount for each batch
         features_df_roi = features_df.copy()
-        features_df_roi["weighted_roi"] = (
-            features_df_roi["loan_roi_90d"] * features_df_roi["loan_amount"]
+        features_df_roi["weighted_loan_roi"] = (
+            features_df_roi[f"loan_roi_{last_measure_point}d"]
+            * features_df_roi["loan_amount"]
         )
 
         weighted_metrics = (
             features_df_roi.groupby("batch_letter")
             .agg(
-                weighted_roi_sum=("weighted_roi", "sum"),
+                weighted_loan_roi_sum=("weighted_loan_roi", "sum"),
                 total_amount=("loan_amount", "sum"),
             )
             .reset_index()
         )
 
         # Create a new column with None values first
-        weighted_metrics["amount_weighted_avg_roi_90d"] = None
+        weighted_metrics[f"amount_weighted_avg_roi_{last_measure_point}d"] = None
 
         # Only update values where total_amount > 0
         mask = weighted_metrics["total_amount"] > 0
-        weighted_metrics.loc[mask, "amount_weighted_avg_roi_90d"] = (
-            weighted_metrics.loc[mask, "weighted_roi_sum"]
+        weighted_metrics.loc[mask, f"amount_weighted_avg_roi_{last_measure_point}d"] = (
+            weighted_metrics.loc[mask, "weighted_loan_roi_sum"]
             / weighted_metrics.loc[mask, "total_amount"]
         )
 
         result_dfs.append(
-            weighted_metrics[["batch_letter", "amount_weighted_avg_roi_90d"]]
+            weighted_metrics[
+                ["batch_letter", f"amount_weighted_avg_roi_{last_measure_point}d"]
+            ]
         )
 
     # Merge all result dataframes

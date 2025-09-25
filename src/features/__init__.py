@@ -25,7 +25,6 @@ from .loan_features import (
     create_temporal_features,
     create_interaction_features,
     create_repayment_behavior_features,
-    create_billing_features,
 )
 from .cohort_features import (
     create_loan_composition_features,
@@ -66,8 +65,8 @@ def create_loan_level_features(
     )
 
     # Prepare loan history data
-    loans_history, loan_creation_records, loan_status_at_decision = (
-        prepare_loan_history_data(loans_and_cohort, decision_time_days)
+    loan_status_at_decision = prepare_loan_history_data(
+        loans_and_cohort, decision_time_days
     )
 
     # Start with loan creation records (basic characteristics)
@@ -146,11 +145,13 @@ def create_cohort_level_features(
         decision_time_days=decision_time_days,
     )
 
-    return create_cohort_features_from_loan_features(loan_features_df)
+    return create_cohort_features_from_loan_features(
+        loan_features_df, decision_time_days
+    )
 
 
 def create_cohort_features_from_loan_features(
-    loan_features_df: pd.DataFrame,
+    loan_features_df: pd.DataFrame, decision_time_days: int = 90
 ) -> pd.DataFrame:
     """
     Create cohort-level features from already processed loan-level features.
@@ -173,7 +174,9 @@ def create_cohort_features_from_loan_features(
     cohort_features = cohort_features.merge(temporal_features, on="batch_letter")
 
     # Add repayment behavior features
-    repayment_features = create_repayment_cohort_features(loan_features_df)
+    repayment_features = create_repayment_cohort_features(
+        loan_features_df, decision_time_days
+    )
     cohort_features = cohort_features.merge(repayment_features, on="batch_letter")
 
     # Add repayment performance features
@@ -185,7 +188,9 @@ def create_cohort_features_from_loan_features(
     cohort_features = cohort_features.merge(risk_features, on="batch_letter")
 
     # Add interaction features
-    interaction_features = create_interaction_cohort_features(loan_features_df)
+    interaction_features = create_interaction_cohort_features(
+        loan_features_df, decision_time_days=decision_time_days
+    )
     cohort_features = cohort_features.merge(interaction_features, on="batch_letter")
 
     print(

@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+NOTES.md
+FEATURE_ENGINEERING*.md
+database.db

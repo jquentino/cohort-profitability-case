@@ -8,7 +8,7 @@ Author: Generated for CloudWalk Case Study
 
 import pandas as pd
 import numpy as np
-from .feature_utils import safe_qcut
+from .feature_utils import safe_qcut, get_measure_points
 
 
 def create_transformed_loan_characteristics(features_df: pd.DataFrame) -> pd.DataFrame:
@@ -88,10 +88,17 @@ def create_repayment_behavior_features(
     ).dt.days
     days_to_first_repayment_df = first_repayment_dates[["days_to_first_repayment"]]
 
+    # --- Calculate total repaid until decision time ---
+    total_repaid_until_decision = (
+        repayments_filtered.groupby("loan_id")["repayment_total"]
+        .agg(["count", "sum"])
+        .rename(columns={"count": "num_repayments", "sum": "total_repaid_amount"})
+        .reset_index()
+    )
+
     # --- Calculate repayment velocity and ROI for different periods ---
     velocity_roi_results = []
-    step = decision_time_days // 3
-    measure_points = np.arange(step, decision_time_days + 1, step).tolist()
+    measure_points = get_measure_points(decision_time_days)
 
     for period in measure_points:
         # Filter repayments within the period
@@ -183,6 +190,7 @@ def create_repayment_behavior_features(
     result_df = velocity_roi_df
     for df in [
         days_to_first_repayment_df.reset_index(),
+        total_repaid_until_decision,
         repayment_cv,
         avg_relative_df,
     ]:
@@ -201,6 +209,8 @@ def create_repayment_behavior_features(
             "days_to_first_repayment": [np.nan] * len(loans_without_repayments),
             "repayment_consistency_cv": [np.nan] * len(loans_without_repayments),
             "avg_repayment_relative": [0] * len(loans_without_repayments),
+            "total_repaid_amount": [0] * len(loans_without_repayments),
+            "num_repayments": [0] * len(loans_without_repayments),
         }
 
         # Add velocity and ROI features
@@ -219,31 +229,3 @@ def create_repayment_behavior_features(
         result_df = pd.concat([result_df, no_repay_df], ignore_index=True)
 
     return result_df
-
-
-def create_billing_features(loans_history_until_decision: pd.DataFrame) -> pd.DataFrame:
-    """Create billing-related features using vectorized operations."""
-    ...  # TODO: Implement billing features creation
-    # Create a copy to avoid modifying the original
-    # loans_history_until_decision = loans_history_until_decision.copy()
-
-    # # Get the status at decision time
-    # # result_df["status_at_decision"] = result_df.apply(
-    # #     lambda row: row.get("status_at_decision_time", row.get("status", "executed")),
-    # #     axis=1,
-    # # )
-
-    # # Create billing features using vectorized operations
-    # in_billing = result_df["status_at_decision"].isin(
-    #     ["debt_collection", "debt_repaid"]
-    # )
-
-    # # Set time in billing days
-    # result_df["time_in_billing_days"] = np.nan  # Default for those in billing
-    # result_df.loc[~in_billing, "time_in_billing_days"] = 0
-
-    # # Set normal repayment flag
-    # result_df["is_in_normal_repayment"] = ~in_billing
-
-    # # Return only the needed columns
-    # return result_df[["loan_id", "time_in_billing_days", "is_in_normal_repayment"]]

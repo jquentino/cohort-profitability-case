@@ -14,7 +14,7 @@ from typing import Tuple
 
 def prepare_loan_history_data(
     loans_and_cohort: pd.DataFrame, decision_time_days: int
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     """
     Prepare loan history data for feature engineering.
 
@@ -23,7 +23,7 @@ def prepare_loan_history_data(
         decision_time_days: Decision time t in days after cohort creation
 
     Returns:
-        Tuple of (loans_history_before_decision, loan_creation_records, loan_status_at_decision)
+        loan_status_at_decision: DataFrame with the status of each loan as of decision time
     """
     loans_history = loans_and_cohort.copy()
 
@@ -37,14 +37,6 @@ def prepare_loan_history_data(
         loans_history["updated_at_h_days"] <= decision_time_days
     ]
 
-    # Get the loan creation record (earliest record per loan) for basic characteristics
-    loan_creation_records = (
-        loans_history.sort_values("updated_at_h_days")
-        .groupby("loan_id")
-        .first()
-        .reset_index()
-    )
-
     # Get the loan status as of decision time (last update before decision cutoff)
     loan_status_at_decision = (
         loans_history_before_decision.sort_values("updated_at_h_days")
@@ -53,7 +45,7 @@ def prepare_loan_history_data(
         .reset_index()
     )
 
-    return loans_history_before_decision, loan_creation_records, loan_status_at_decision
+    return loan_status_at_decision
 
 
 def get_unique_loans_from_history(loans_and_cohort: pd.DataFrame) -> pd.DataFrame:
@@ -149,3 +141,10 @@ def load_features_from_database(
         )
 
     return loan_features_df, cohort_features_df
+
+
+def get_measure_points(decision_time_days: int, n_points: int = 3) -> list[int]:
+    """Get n equally spaced measure points in a space of decision_time_days."""
+    step = decision_time_days // n_points
+    measure_points = np.arange(step, decision_time_days + 1, step).tolist()
+    return measure_points
