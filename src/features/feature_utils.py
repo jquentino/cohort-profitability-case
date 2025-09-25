@@ -100,30 +100,35 @@ def safe_qcut(x, q=10):
 
 
 def save_features_to_database(
-    loan_features_df: pd.DataFrame,
-    cohort_features_df: pd.DataFrame,
     database_path: str,
     decision_time_days: int,
+    time_horizon_days: int,
+    loan_features_df: pd.DataFrame | None = None,
+    cohort_features_df: pd.DataFrame | None = None,
 ) -> None:
     """Save feature tables to the database."""
 
-    loan_table_name = f"loan_features_t{decision_time_days}"
-    cohort_table_name = f"cohort_features_t{decision_time_days}"
+    loan_table_name = f"loan_features_t{decision_time_days}_h{time_horizon_days}"
+    cohort_table_name = f"cohort_features_t{decision_time_days}_h{time_horizon_days}"
 
     with sqlite3.connect(database_path) as conn:
         # Save loan-level features
-        loan_features_df.to_sql(loan_table_name, conn, if_exists="replace", index=False)
-        print(
-            f"Saved {len(loan_features_df)} loan features to table: {loan_table_name}"
-        )
+        if loan_features_df is not None:
+            loan_features_df.to_sql(
+                loan_table_name, conn, if_exists="replace", index=False
+            )
+            print(
+                f"Saved {len(loan_features_df)} loan features to table: {loan_table_name}"
+            )
 
         # Save cohort-level features
-        cohort_features_df.to_sql(
-            cohort_table_name, conn, if_exists="replace", index=False
-        )
-        print(
-            f"Saved {len(cohort_features_df)} cohort features to table: {cohort_table_name}"
-        )
+        if cohort_features_df is not None:
+            cohort_features_df.to_sql(
+                cohort_table_name, conn, if_exists="replace", index=False
+            )
+            print(
+                f"Saved {len(cohort_features_df)} cohort features to table: {cohort_table_name}"
+            )
 
 
 def load_features_from_database(
