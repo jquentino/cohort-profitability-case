@@ -78,9 +78,8 @@ def load_data(db_path: str = "../database.db", remove_loans_with_errors: bool = 
                 "cohort_start",
                 "created_at",
                 "created_at_h_days",
-                "updated_at_h_days",
             ]
-        ].drop_duplicates(),
+        ].drop_duplicates(subset=["loan_id"]),
         on="loan_id",
         how="left",
     )
