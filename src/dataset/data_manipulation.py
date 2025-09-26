@@ -122,7 +122,7 @@ def _prepare_roi_columns(repayments_and_loans: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_roi_curves(
-    repayments_and_loans: pd.DataFrame, cohort_principal: pd.DataFrame | pd.Series
+    repayments_and_loans: pd.DataFrame, loans_and_cohort: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Compute ROI curves for each cohort over time.
@@ -133,36 +133,117 @@ def compute_roi_curves(
     Returns:
         pd.DataFrame: DataFrame containing ROI curves with columns 'batch', 'h_days', and 'ROI'.
     """
+    repayment_curve = _compute_repayments_curve(repayments_and_loans)
+    max_days = repayment_curve["h_days"].max()
+    cohort_principal = _compute_cohort_principal(loans_and_cohort, max_days)
+
+    # Combine the repayment curve and cohort principal into a single DataFrame
+    roi_curves = repayment_curve.merge(
+        cohort_principal,
+        left_on=["batch_letter", "h_days"],
+        right_on=["batch_letter", "created_at_h_days"],
+        how="left",
+    )
+    roi_curves["ROI"] = (
+        roi_curves["repayment_total"] / roi_curves["cohort_principal"] - 1
+    )
+
+    return roi_curves
+
+
+def _compute_repayments_curve(repayments_and_loans: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute the cumulative repayments curve for each cohort over time.
+
+    Args:
+        repayments_and_loans (pd.DataFrame): DataFrame containing repayments and loans data with necessary columns.
+
+    Returns:
+        pd.DataFrame: DataFrame containing cumulative repayments with columns 'batch', 'h_days', and 'repayment_total'.
+    """
     # Aggregate cash flows by batch and h_days
+    # Vectorized approach - no loops needed
     repayment_curve = (
         repayments_and_loans.groupby(["batch_letter", "h_days"])["repayment_total"]
         .sum()
         .groupby(level=0)
         .cumsum()
         .reset_index()
+        .astype({"h_days": int})
     )
-    repayment_curve = repayment_curve.merge(cohort_principal, on="batch_letter")
-    repayment_curve["ROI"] = (
-        repayment_curve["repayment_total"] / repayment_curve["cohort_principal"] - 1
+
+    # Create a complete time series using vectorized operations
+    max_h_days = repayment_curve["h_days"].max()
+    batch_letters = repayment_curve["batch_letter"].unique().tolist()
+
+    # Create MultiIndex with all combinations of batch_letter and h_days
+    complete_index = pd.MultiIndex.from_product(
+        [batch_letters, range(0, max_h_days + 1)], names=["batch_letter", "h_days"]
+    ).to_frame(index=False)
+
+    # Merge with actual data and forward fill
+    repayment_curve = (
+        complete_index.merge(repayment_curve, on=["batch_letter", "h_days"], how="left")
+        .sort_values(["batch_letter", "h_days"])
+        .groupby("batch_letter")["repayment_total"]
+        .ffill()
+        .fillna(0)
+        .reset_index()
+        .merge(complete_index, left_index=True, right_index=True)[
+            ["batch_letter", "h_days", "repayment_total"]
+        ]
     )
+
     return repayment_curve
 
 
-def compute_cohort_principal(loans_and_cohort: pd.DataFrame) -> pd.Series:
+def _compute_cohort_principal(
+    loans_and_cohort: pd.DataFrame, max_h_days: int | None = None
+) -> pd.DataFrame:
     """
     Compute the cohort principal for each batch.
 
     Args:
         loans_and_cohort (pd.DataFrame): The merged repayments and loans DataFrame
-
+        max_days (int): Maximum number of days to consider for the cohort principal
     Returns:
         pd.Series: Series with cohort principal for each batch
     """
     cohort_principal = (
-        loans_and_cohort[["loan_id", "batch_letter", "loan_amount"]]
+        loans_and_cohort[
+            ["loan_id", "batch_letter", "loan_amount", "created_at_h_days"]
+        ]
+        .sort_values(by=["created_at_h_days"])
         .drop_duplicates(subset=["loan_id"])
-        .groupby("batch_letter")["loan_amount"]
+        .groupby(["batch_letter", "created_at_h_days"])["loan_amount"]
         .sum()
-        .rename("cohort_principal")
+        .groupby(level=0)
+        .cumsum()
+        .reset_index()
+        .rename(columns={"loan_amount": "cohort_principal"})
     )
+    if max_h_days is None:
+        max_h_days = cohort_principal["created_at_h_days"].max()
+
+    batch_letters = cohort_principal["batch_letter"].unique().tolist()
+
+    complete_index = pd.MultiIndex.from_product(
+        [batch_letters, range(0, max_h_days + 1)],
+        names=["batch_letter", "created_at_h_days"],
+    ).to_frame(index=False)
+
+    cohort_principal = (
+        complete_index.merge(
+            cohort_principal, on=["batch_letter", "created_at_h_days"], how="left"
+        )
+        .sort_values(["batch_letter", "created_at_h_days"])
+        .groupby("batch_letter")["cohort_principal"]
+        .ffill()
+        .fillna(0)
+        .reset_index()
+        .merge(complete_index, left_index=True, right_index=True)[
+            ["batch_letter", "created_at_h_days", "cohort_principal"]
+        ]
+    )
+
     return cohort_principal

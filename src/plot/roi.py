@@ -28,7 +28,7 @@ def plot_roi_curves(
         ax.plot(g["h_days"], g["ROI"], label=f"Cohort {batch_letter}")  # type: ignore
 
     ax.set_title("ROI by Cohort" + (f" - {extra_title}" if extra_title else ""))
-    ax.set_xlabel("H (days since cohort start)")
+    ax.set_xlabel("t (days since cohort start)")
     ax.set_ylabel("ROI")
     ax.grid(which="both", axis="x")
     ax.axhline(0, color="black", linestyle="--", linewidth=0.8)
