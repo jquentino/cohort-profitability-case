@@ -132,18 +132,30 @@ def save_features_to_database(
 
 
 def load_features_from_database(
-    database_path: str, decision_time_days: int
+    database_path: str,
+    decision_time_days: int,
+    time_horizon_days: int,
+    cohort_features: bool = True,
+    loan_features: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Load feature tables from the database."""
 
-    loan_table_name = f"loan_features_t{decision_time_days}"
-    cohort_table_name = f"cohort_features_t{decision_time_days}"
+    loan_table_name = f"loan_features_t{decision_time_days}_h{time_horizon_days}"
+    cohort_table_name = f"cohort_features_t{decision_time_days}_h{time_horizon_days}"
 
+    loan_features_df = pd.DataFrame()
+    cohort_features_df = pd.DataFrame()
     with sqlite3.connect(database_path) as conn:
-        loan_features_df = pd.read_sql_query(f"SELECT * FROM {loan_table_name}", conn)
-        cohort_features_df = pd.read_sql_query(
-            f"SELECT * FROM {cohort_table_name}", conn
-        )
+        if loan_features:
+            print(f"Loading loan features from table: {loan_table_name}")
+            loan_features_df = pd.read_sql_query(
+                f"SELECT * FROM {loan_table_name}", conn
+            )
+        if cohort_features:
+            print(f"Loading cohort features from table: {cohort_table_name}")
+            cohort_features_df = pd.read_sql_query(
+                f"SELECT * FROM {cohort_table_name}", conn
+            )
 
     return loan_features_df, cohort_features_df
 
