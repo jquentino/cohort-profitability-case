@@ -7,7 +7,7 @@ Author: Generated for CloudWalk Case Study
 """
 
 import pandas as pd
-from .feature_utils import hhi_concentration, safe_divide, get_measure_points
+from .feature_utils import hhi_concentration, safe_divide
 
 
 def create_loan_composition_features(features_df: pd.DataFrame) -> pd.DataFrame:
@@ -30,10 +30,6 @@ def create_loan_composition_features(features_df: pd.DataFrame) -> pd.DataFrame:
             total_repaid_amount=("total_repaid_amount", "sum"),
         )
         .reset_index()
-    )
-    cohort_features["roi_now"] = (
-        cohort_features["total_repaid_amount"] / cohort_features["total_loan_amount"]
-        - 1
     )
 
     return cohort_features
@@ -92,26 +88,6 @@ def create_repayment_cohort_features(
     # Create an empty list to store the calculated metrics for each period
     agg_dict = {}
 
-    # Add aggregations for all columns that might exist
-    measure_points = get_measure_points(decision_time_days=decision_time_days)
-    for period in measure_points:
-        velocity_col = f"repayment_velocity_{period}d"
-        roi_col = f"loan_roi_{period}d"
-
-        if velocity_col in features_df.columns:
-            agg_dict[f"avg_{velocity_col}"] = pd.NamedAgg(
-                column=velocity_col, aggfunc="mean"
-            )
-            agg_dict[f"median_{velocity_col}"] = pd.NamedAgg(
-                column=velocity_col, aggfunc="median"
-            )
-
-        if roi_col in features_df.columns:
-            agg_dict[f"avg_{roi_col}"] = pd.NamedAgg(column=roi_col, aggfunc="mean")
-            agg_dict[f"median_{roi_col}"] = pd.NamedAgg(
-                column=roi_col, aggfunc="median"
-            )
-
     # Add other potential columns
     if "days_to_first_repayment" in features_df.columns:
         agg_dict["avg_days_to_first_repayment"] = pd.NamedAgg(
@@ -128,25 +104,6 @@ def create_repayment_cohort_features(
 
     # Group by batch_letter and calculate all metrics at once
     cohort_features = features_df.groupby("batch_letter").agg(**agg_dict).reset_index()
-
-    # Handle percentage of positive ROI separately since it needs a custom calculation
-    last_measure_point = measure_points[-1]
-    if f"loan_roi_{last_measure_point}d" in features_df.columns:
-        # Calculate percentage of positive ROI loans for each batch
-        positive_roi = (
-            features_df.groupby("batch_letter")[f"loan_roi_{last_measure_point}d"]
-            .apply(lambda x: (x >= 0).sum() / len(x))
-            .reset_index()
-        )
-        positive_roi.columns = [
-            "batch_letter",
-            f"pct_positive_roi_{last_measure_point}d",
-        ]
-
-        # Merge with the existing features
-        cohort_features = cohort_features.merge(
-            positive_roi, on="batch_letter", how="left"
-        )
 
     return cohort_features
 
@@ -309,7 +266,6 @@ def create_interaction_cohort_features(
     features_df: pd.DataFrame, decision_time_days: int
 ) -> pd.DataFrame:
     """Create cohort-level interaction features using vectorized operations."""
-    last_measure_point = get_measure_points(decision_time_days=decision_time_days)[-1]
     result_dfs = []
 
     # Base dataframe with batch letters
@@ -325,40 +281,6 @@ def create_interaction_cohort_features(
         )
         avg_interaction.columns = ["batch_letter", "avg_loan_amount_x_interest"]
         result_dfs.append(avg_interaction)
-
-    # Risk-adjusted metrics (if we have ROI data)
-    if f"loan_roi_{last_measure_point}d" in features_df.columns:
-        # Calculate weighted sum and total amount for each batch
-        features_df_roi = features_df.copy()
-        features_df_roi["weighted_loan_roi"] = (
-            features_df_roi[f"loan_roi_{last_measure_point}d"]
-            * features_df_roi["loan_amount"]
-        )
-
-        weighted_metrics = (
-            features_df_roi.groupby("batch_letter")
-            .agg(
-                weighted_loan_roi_sum=("weighted_loan_roi", "sum"),
-                total_amount=("loan_amount", "sum"),
-            )
-            .reset_index()
-        )
-
-        # Create a new column with None values first
-        weighted_metrics[f"amount_weighted_avg_roi_{last_measure_point}d"] = None
-
-        # Only update values where total_amount > 0
-        mask = weighted_metrics["total_amount"] > 0
-        weighted_metrics.loc[mask, f"amount_weighted_avg_roi_{last_measure_point}d"] = (
-            weighted_metrics.loc[mask, "weighted_loan_roi_sum"]
-            / weighted_metrics.loc[mask, "total_amount"]
-        )
-
-        result_dfs.append(
-            weighted_metrics[
-                ["batch_letter", f"amount_weighted_avg_roi_{last_measure_point}d"]
-            ]
-        )
 
     # Merge all result dataframes
     if len(result_dfs) > 1:
