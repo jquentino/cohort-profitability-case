@@ -37,7 +37,6 @@ Where:
 
 #### ROI Curve Behavior
 The analysis revealed that cohort ROI curves follow an **exponential decay pattern** toward a plateau:
-The exponential decay pattern can be mathematically described as:
 
 $$
 Y(t) = Y_p + (Y_0 - Y_p) e^{-kt}
@@ -49,13 +48,18 @@ Where:
 - $k$: decay constant
 - $t$: time in days
 
-*[Figure Placeholder: Exponential decay pattern fitting]*
+**Key profitability findings**:
+- **5 out of 7 cohorts** achieved profitability (A, B, C, E, F)
+- **4 cohorts** became profitable after 400-600 days (A, B, C, F)
+- **Cohort E** required ~1000 days to achieve profitability
+- **Cohorts D and G** remained unprofitable throughout the observation period
 
-#### Cohort Heterogeneity
+#### Cohort Heterogeneity and Risk Profiles
 Significant variation was observed across cohorts:
+
+**Portfolio Characteristics**:
 - **Portfolio sizes**: 11K to 50K loans per cohort
 - **Total exposure**: $2.7M to $114.6M per cohort
-- **Concentration levels**: Gini coefficients ranging from 0.12 to 0.68
 - **Interest rates**: 2.06% to 3.40% average by cohort
 
 ### 2. Feature Engineering Results
@@ -73,6 +77,45 @@ A comprehensive feature engineering process created **44 features** across two l
 - **Distribution statistics**: Percentiles, skewness, coefficient of variation
 - **Risk indicators**: Interest rate distribution, value-weighted averages
 
+### 2.5. Key EDA Research Questions and Findings
+
+#### Cohort Repayment Rate and Payment Status Analysis
+*Research Question*: "Do loans within the same cohort being predominantly repaid increase the chance that a particular loan will be repaid?"
+
+- **Methodology**: Logistic regression modeling individual loan repayment probability as a function of cohort repayment rate
+- **Key Finding**: Weak but significant relationship (Pseudo R² = 0.078) 
+- **Statistical Evidence**: Positive coefficient indicating higher cohort repayment rates associated with higher individual repayment probability
+- **Business Insight**: While cohort behavior has some influence, individual loan characteristics dominate repayment outcomes
+- **Visual Evidence**: Box plot analysis showed loans that were repaid tend to belong to cohorts with higher overall repayment rates
+
+![Batch repayment rate by loan status](images/batch_repayment_loan_status.png)
+
+#### Collections Sensitivity Analysis
+*Research Question*: "How would changes in billing amounts affect the ROI curves?"
+
+- **Methodology**: Comparative analysis of ROI curves with and without collection amounts
+- **Key Findings**:
+  - **Critical impact**: Collections have substantial effect on cohort profitability
+  - **Without collections**: Only cohort F remained profitable
+  - **Strong correlation**: Collections ratio negatively correlated with ROI (R² = 0.919)
+  - **Statistical significance**: Higher collections ratios significantly associated with lower ROI (p = 0.012)
+- **Business Insight**: Cohorts with higher dependency on collections typically indicate poor underlying loan quality and lower profitability
+
+![Collections sensitivity analysis](images/collections_sensitivity.png)
+
+#### Default Tolerance Analysis 
+*Research Question*: "What initial default rate can each cohort tolerate while remaining profitable?"
+
+- **Methodology**: Stratified sampling simulation using loan amount percentiles to avoid selection bias
+- **Simulation Approach**: Systematically removed loans across different default rate scenarios (0.1% to 10%)
+- **Key Findings**:
+  - **Profitable cohorts** showed varying tolerance levels for initial defaults
+  - **Unprofitable cohorts** (D, G) had zero tolerance by definition
+  - **Robustness**: Results stable across multiple random seeds (5 experiments per cohort)
+  - **Non-linear relationship**: Default tolerance did not correlate strongly with final ROI (R² = 0.114, p = 0.6)
+- **Business Insight**: Default tolerance varies significantly across cohorts and cannot be simply predicted from baseline ROI performance
+
+![Default tolerance analysis](images/detault_tolerance.png)
 
 ### 3. Modeling Challenges and Approaches
 
@@ -137,6 +180,9 @@ class HybridROIModel:
 - **Multiple scales**: Balancing loan-level and cohort-level information
 - **Uncertainty estimation**: Computational complexity of bootstrap methods
 
+### 3. Implementation Constraints
+- **Loan-level modeling approach**: Due to time constraints, the comprehensive loan-level feature analysis was not implemented. While 27 loan-level features were engineered and documented, the alternative modeling strategy of predicting individual loan outcomes and aggregating to cohort-level ROI remained unexplored. This approach could potentially have provided better insights into individual loan behavior patterns and their contribution to overall cohort profitability.
+
 ## Lessons Learned
 
 ### 1. Modeling Insights
@@ -167,10 +213,57 @@ src/
     └── data_manipulation.py     # Data loading and processing
 ```
 
+### Project Setup and Environment
+
+This project was built using **uv**, a modern Python package manager that provides fast and reliable dependency management. The project follows modern Python packaging standards with all dependencies explicitly declared in the `pyproject.toml` file.
+
+#### Replicating the Environment
+
+To replicate the analysis environment:
+
+1. **Install uv** (if not already installed):
+   ```bash
+   # On Windows
+   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+   
+   # On macOS/Linux
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+<!-- 2. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd case-ds-cloud-walk
+   ``` -->
+
+2. **Create and activate virtual environment**:
+   ```bash
+   # uv automatically creates a virtual environment and installs dependencies
+   uv sync
+   ```
+
+3. **Run analysis notebooks**:
+   ```bash
+   # Start Jupyter
+   uv run jupyter lab
+   ```
+   You also can attach the virtual environment kernel to VSCode notebooks for direct execution.
+
+#### Dependencies
+All project dependencies are declared in `pyproject.toml`, including:
+- **Data processing**: pandas, numpy, scipy
+- **Machine learning**: scikit-learn, lightgbm, prophet
+- **Visualization**: matplotlib, seaborn, plotly
+- **Database**: sqlite3 (built-in)
+- **Development**: jupyter, ipython
+
+The uv lock file (`uv.lock`) ensures reproducible installations across different environments.
+
 ### Reproducibility
 - All analysis code is version-controlled and documented
 - Random seeds fixed for reproducible results
 - Configuration parameters centralized for easy modification
+- Exact dependency versions locked in `uv.lock` for consistent environments
 
 ## Conclusion
 
