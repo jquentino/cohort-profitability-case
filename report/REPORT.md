@@ -73,7 +73,7 @@ A comprehensive feature engineering process created **44 features** across two l
 - **Missing data challenge**: ~66.7% missing values for behavioral features (loans with no repayments)
 
 #### Cohort-Level Features (17 features) 
-- **Portfolio metrics**: Size, concentration (Gini, HHI)
+- **Portfolio metrics**: Size, concentration (HHI)
 - **Distribution statistics**: Percentiles, skewness, coefficient of variation
 - **Risk indicators**: Interest rate distribution, value-weighted averages
 
